@@ -1,0 +1,7 @@
+.settings\
+__pycache__\
+.db
+.project
+.pydevproject
+.pyc
+.txt
