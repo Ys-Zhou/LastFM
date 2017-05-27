@@ -1,148 +1,213 @@
 # -*- coding: utf-8 -*-
-import numpy
-import scipy.sparse as sparse
-import math
-import threading
+import multiprocessing as mp
+import math 
+import random  
 import time
-import warnings
-warnings.filterwarnings('error')
 from DBConnector import DBConnector
-inDBConnector = DBConnector()
 
-threadNowStep = [0, 0, 0, 0, 0, 0]
-nowStep = 0
-rawlist = [0, 0, 0, 0, 0, 0]
-iflist = [0, 0, 0, 0, 0, 0]
-feature = 20
-
-class SvdThread(threading.Thread):
-    def __init__ (self, mat, matIn):
-        threading.Thread.__init__(self)
-        self.mat = mat
-        self.matIn = matIn
-        self.steps = 10
-        self.gama = numpy.float64(0.02)
-        self.lamda = numpy.float64(0.3)
+class SvdProc(mp.Process):
+    def __init__ (self, inTg, inRaw, inLock, inSvdNowStep, inAvgNowStep, inSvdItemFeature, inAvgItemFeature):
+        mp.Process.__init__(self)
+        self.train = {}
+        self.user_feature = {}
+        self.item_feature = {}
+        self.tg = inTg
+        self.raw = inRaw
+        # Load server values
+        self.lock = inLock
+        self.svdNowStep = inSvdNowStep
+        self.avgNowStep = inAvgNowStep
+        self.svdItemFeature = inSvdItemFeature
+        self.avgItemFeature = inAvgItemFeature
+        # Local attributes
+        self.feature = 20
+        self.userNum = 10005
+        self.movieNum = 87458
         
-    def run(self):
-        global threadStep, iflist  # 声明需要写入的全局变量
-        slowRate = 0.99  
-#         preRmse = 1000000000.0  
+    def load_data(self):
+        for item in self.raw:
+            self.train.setdefault(str(item[0]), {})
+            self.train[str(item[0])][str(item[1])] = float(item[2])
+
+    def initialFeature(self):  
+        random.seed(0)    
+        for i in range(1, self.userNum + 1):  
+            si = str(i)  
+            self.user_feature.setdefault(si, {})   
+            for j in range(1, self.feature + 1):  
+                sj = str(j)  
+                self.user_feature[si].setdefault(sj, random.uniform(0, 1))   
+ 
+        for i in range(1, self.movieNum + 1):  
+            si = str(i)  
+            self.item_feature.setdefault(si, {})  
+            for j in range(1, self.feature + 1):  
+                sj = str(j)  
+                self.item_feature[si].setdefault(sj, random.uniform(0, 1))  
+
+    def savetxt(self):
+        fileName = 'user_feature_tg%d.txt' % self.tg
+        f = open(fileName, 'w+')
+        for i in range(1, self.userNum + 1):
+            si = str(i)
+            f.write('%s' % si)
+            for j in range(1, self.feature + 1):
+                sj = str(j)
+                f.write('\t%f' % self.user_feature[si][sj])
+            f.write('\n')    
+        f.close()
+        
+    def run(self):  
+        self.load_data()
+        print 'Process-%d: load data success' % self.tg
+        
+        self.initialFeature()
+        print 'Process-%d: initial user and item feature, respectly success' % self.tg
+        
+        # SVD parameter
+        gama = 0.02
+        lamda = 0.3
+        slowRate = 0.99
+        step = 0
+        preRmse = 1000000000.0
         nowRmse = 0.0
-        user_feature = numpy.matrix(numpy.random.rand(10005, feature), dtype=numpy.float64)
-        item_feature = numpy.matrix([[]], dtype=numpy.float64)
-      
-        for step in range(self.steps):  
-            rmse = numpy.float64(0.0)
-            n = 0 
-            
-            while True:  # 读取共享变量
-                if con.acquire():
-                    item_feature = iflist[self.matIn]
-                    print 'Got item feature matrix %d' % self.matIn
-                    con.release()
-                    break
-                time.sleep(1)
 
-            for u in range(self.mat.shape[0]):  
-                for i in range(self.mat.shape[1]):  
-                    if not numpy.isnan(self.mat[u, i]):
-                        pui = numpy.float64(numpy.dot(user_feature[u, :], item_feature[i, :].T))  
-                        eui = numpy.float64(self.mat[u, i]) - pui  
-                        rmse += eui ** 2
-                        n += 1   
-                        for k in range(feature):  
-                            user_feature[u, k] += self.gama * (eui * item_feature[i, k] - self.lamda * user_feature[u, k])  
-                            item_feature[i, k] += self.gama * (eui * user_feature[u, k] - self.lamda * item_feature[i, k])
-                        print user_feature[u, :]
-                        print item_feature[i, :]
+        while step < 10:
+            rmse = 0.0
+            n = 0
+            for u in self.train.keys():  
+                for i in self.train[u].keys():  
+                    pui = 0  
+                    for k in range(1, self.feature + 1):
+                        sk = str(k)  
+                        pui += self.user_feature[u][sk] * self.item_feature[i][sk]  
+                    eui = self.train[u][i] - pui  
+                    rmse += pow(eui, 2)  
+                    n += 1  
+                    for k in range(1, self.feature + 1):  
+                        sk = str(k)  
+                        self.user_feature[u][sk] += gama * (eui * self.item_feature[i][sk] - lamda * self.user_feature[u][sk])  
+                        self.item_feature[i][sk] += gama * (eui * self.user_feature[u][sk] - lamda * self.item_feature[i][sk])  
+                  
             nowRmse = math.sqrt(rmse * 1.0 / n)  
-            print 'step: %d      Rmse: %s' % ((step + 1), nowRmse) 
-#             if (nowRmse < preRmse):    
-#                 preRmse = nowRmse  
-#             else:  
-#                 break
-            self.gama *= slowRate    
-            
-            while True:  # 写入共享变量
-                if con.acquire():
-#                     print self.matIn
-#                     print user_feature
-                    if threadNowStep[self.matIn] < step:
-                        iflist[self.matIn] = item_feature
-                        threadNowStep[self.matIn] = step
-                    if nowStep == step:
-                        con.release()
+            print 'Process-%d: step: %d      Rmse: %s' % (self.tg, (step + 1), nowRmse)  
+            if (nowRmse < preRmse):  
+                preRmse = nowRmse  
+                  
+            gama *= slowRate  
+            step += 1
+
+            while True:
+                if self.lock.acquire():
+                    if self.svdNowStep[self.tg - 1] < step:
+                        self.svdItemFeature[self.tg - 1] = self.item_feature
+                        self.svdNowStep[self.tg - 1] = step
+                    if self.avgNowStep.value == step:
+                        self.item_feature.update(self.avgItemFeature)
+                        self.lock.release()
                         break
-                    con.release()
-                time.sleep(1)    
-        
-        fname = 'user_feature%d.txt' % self.matIn
-        numpy.savetxt(fname, user_feature)
-        
-class AvgThread(threading.Thread):
-    def __init__ (self):
-        threading.Thread.__init__(self)
+                    self.lock.release()
+                    time.sleep(1)
+
+        self.savetxt()
+        print 'Process-%d: svd + stochastic gradient descent success' % self.tg
+
+class AvgProc(mp.Process):
+    def __init__ (self, inLock, inSvdNowStep, inAvgNowStep, inSvdItemFeature, inAvgItemFeature):
+        mp.Process.__init__(self)
+        # Load server values
+        self.lock = inLock
+        self.svdNowStep = inSvdNowStep
+        self.avgNowStep = inAvgNowStep
+        self.svdItemFeature = inSvdItemFeature
+        self.avgItemFeature = inAvgItemFeature
+        # Local attributes
+        self.feature = 20
+        self.movieNum = 87458
+        self.processNum = 6
     
     def run(self):
-        global nowStep, iflist
         while True:
-            if con.acquire():
-                if threadNowStep[0] > nowStep:
-#                  and threadNowStep[1] > nowStep and threadNowStep[2] > nowStep and threadNowStep[3] > nowStep and threadNowStep[4] > nowStep and threadNowStep[5] > nowStep:
-                    # avgmat = (iflist[0] + iflist[1] + iflist[2] + iflist[3] + iflist[4] + iflist[5]) / 6.0
-#                     iflist[0] = avgmat
-#                     iflist[1] = avgmat
-#                     iflist[2] = avgmat
-#                     iflist[3] = avgmat
-#                     iflist[4] = avgmat
-#                     iflist[5] = avgmat
-                    nowStep += 1
-                con.release()
-            time.sleep(1)
+            if self.lock.acquire():
+                if list(self.svdNowStep) == [self.avgNowStep.value + 1] * self.processNum:
+                    lSvdItemFeature = [0] * self.processNum
+                    for t in range(self.processNum):
+                        lSvdItemFeature[t] = self.svdItemFeature[t]
+                    lAvgItemFeature = {}
+                    for i in range(1, self.movieNum + 1):
+                        si = str(i)
+                        lAvgItemFeature.setdefault(si, {})
+                        for j in range(1, self.feature + 1):
+                            sj = str(j)
+                            value = 0.0
+                            for t in range(self.processNum):
+                                value += lSvdItemFeature[t][si][sj]
+                            lAvgItemFeature[si].setdefault(sj, value / float(self.processNum)) 
+                    self.avgItemFeature.update(lAvgItemFeature)
+                    self.avgNowStep.value += 1
+                    print 'Process-avg: next step'
+                self.lock.release()
+            time.sleep(10)
 
-def makeMatrix(p, row, col):
-    query = 'SELECT tg%d*LOG(total+1) FROM norm_as' % p
-    _list = inDBConnector.runQuery(query)
-    d_list = map(list, zip(*r_list))[0]
-    data = numpy.array(d_list)
-
-    mtx = sparse.csc_matrix((data, (row, col)), shape=(10005, 87458))
-    return mtx
-
-con = threading.Condition()
-
-query = 'SELECT users.uid-1 FROM norm_as JOIN users ON norm_as.uname = users.uname'
-r_list = inDBConnector.runQuery(query)
-d_list = map(list, zip(*r_list))[0]
-row = numpy.array(d_list)
-
-query = 'SELECT artists.aid-1 FROM norm_as JOIN artists ON norm_as.aname = artists.aname'
-r_list = inDBConnector.runQuery(query)
-d_list = map(list, zip(*r_list))[0]
-col = numpy.array(d_list)
-
-rawlist[0] = makeMatrix(1, row, col)
-# rawlist[1] = makeMatrix(2)
-# rawlist[2] = makeMatrix(3)
-# rawlist[3] = makeMatrix(4)
-# rawlist[4] = makeMatrix(5)
-# rawlist[5] = makeMatrix(6)
-
-for i in range(0, 6):
-    iflist[i] = numpy.matrix(numpy.random.rand(87458, feature), dtype='float64') 
-
-subsvd0 = SvdThread(rawlist[0], 0)
-subsvd0.start()
-# subsvd1 = SvdThread(rawlist[1], 1)
-# subsvd1.start()
-# subsvd2 = SvdThread(rawlist[2], 2)
-# subsvd2.start()
-# subsvd3 = SvdThread(rawlist[3], 3)
-# subsvd3.start()
-# subsvd4 = SvdThread(rawlist[4], 4)
-# subsvd4.start()
-# subsvd5 = SvdThread(rawlist[5], 5)
-# subsvd5.start()
-avg = AvgThread()
-avg.start()
+if __name__ == '__main__':
+    # Main process values
+    feature = 20
+    movieNum = 87458
+    processNum = 6
+    
+    # Process locker
+    lock = mp.Lock()
+    
+    # Server Process
+    manager = mp.Manager()
+    svdNowStep = manager.list([0] * processNum)
+    avgNowStep = manager.Value('i', 0)
+    svdItemFeature = manager.list([0] * processNum)
+    avgItemFeature = manager.dict()
+    
+    # Do queries at main process due to avoid database block
+    inDBConnector = DBConnector()
+    
+    query = 'SELECT uid, aid, pro*LOG(total+1) FROM norm_as WHERE tg = 1'
+    r_list = inDBConnector.runQuery(query)
+    svd1 = SvdProc(1, r_list, lock, svdNowStep, avgNowStep, svdItemFeature, avgItemFeature)
+    svd1.daemon = True
+    svd1.start()
+    
+    query = 'SELECT uid, aid, pro*LOG(total+1) FROM norm_as WHERE tg = 2'
+    r_list = inDBConnector.runQuery(query)
+    svd2 = SvdProc(2, r_list, lock, svdNowStep, avgNowStep, svdItemFeature, avgItemFeature)
+    svd2.daemon = True
+    svd2.start()
+    
+    query = 'SELECT uid, aid, pro*LOG(total+1) FROM norm_as WHERE tg = 3'
+    r_list = inDBConnector.runQuery(query)
+    svd3 = SvdProc(3, r_list, lock, svdNowStep, avgNowStep, svdItemFeature, avgItemFeature)
+    svd3.daemon = True
+    svd3.start()
+     
+    query = 'SELECT uid, aid, pro*LOG(total+1) FROM norm_as WHERE tg = 4'
+    r_list = inDBConnector.runQuery(query)
+    svd4 = SvdProc(4, r_list, lock, svdNowStep, avgNowStep, svdItemFeature, avgItemFeature)
+    svd4.daemon = True
+    svd4.start()
+     
+    query = 'SELECT uid, aid, pro*LOG(total+1) FROM norm_as WHERE tg = 5'
+    r_list = inDBConnector.runQuery(query)
+    svd5 = SvdProc(5, r_list, lock, svdNowStep, avgNowStep, svdItemFeature, avgItemFeature)
+    svd5.daemon = True
+    svd5.start()
+     
+    query = 'SELECT uid, aid, pro*LOG(total+1) FROM norm_as WHERE tg = 6'
+    r_list = inDBConnector.runQuery(query)
+    svd6 = SvdProc(6, r_list, lock, svdNowStep, avgNowStep, svdItemFeature, avgItemFeature)
+    svd6.daemon = True
+    svd6.start()
+    
+    avg = AvgProc(lock, svdNowStep, avgNowStep, svdItemFeature, avgItemFeature)
+    avg.daemon = True
+    avg.start()
+    
+    # Keep the main process running
+    while True:
+        time.sleep(60)

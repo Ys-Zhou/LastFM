@@ -7,14 +7,13 @@ class AvgProc(Process):
         self.avgItemFeature = inAvgItemFeature
     
     def run(self):
-        d = {'a':{'b':1}}
-        self.avgItemFeature.update(d)
-       
+        if self.avgItemFeature.value == 1:
+            print 't'
+
 if __name__ == '__main__': 
     manager = Manager()      
-    avgItemFeature = manager.dict()
-    avg = AvgProc(avgItemFeature)
+    avgNowStep = manager.Value('i', 1)
+    avg = AvgProc(avgNowStep)
     avg.start()
     while True:
-        print avgItemFeature
         time.sleep(1)

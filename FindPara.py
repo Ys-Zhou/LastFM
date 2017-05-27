@@ -4,7 +4,9 @@ from DBConnector import DBConnector
 
 inDBConnector = DBConnector()
 
-query = 'SELECT * FROM pretreat_as'
+query = ('SELECT users.uid, artists.aid, p.tg1, p.tg2, p.tg3, p.tg4, p.tg5, p.tg6 FROM pretreat_as AS p '
+         'JOIN users FORCE INDEX(idx_users_uid) ON p.uname = users.uname '
+         'JOIN artists ON p.aname = artists.aname ORDER BY users.uid')
 r_list = inDBConnector.runQuery(query)
 
 for item in r_list:
@@ -41,8 +43,9 @@ for item in r_list:
             tg[i] = 0.05
         tg[exp] = 0.75
     
-    insert = ('INSERT INTO norm_as (uname, aname, tg1, tg2, tg3, tg4, tg5, tg6, total)' 'VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)')
-    data = (item[0], item[1], tg[1], tg[2], tg[3], tg[4], tg[5], tg[6], total)
-    inDBConnector.runInsert(insert, data)
+    for tg in range(1, 7):
+        insert = ('INSERT INTO norm_as ' 'VALUES (%s, %s, %s, %s, %s)')
+        data = (item[0], item[1], i, tg[i], total)
+        inDBConnector.runInsert(insert, data)
     
     print item[0]
