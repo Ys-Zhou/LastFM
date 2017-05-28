@@ -2,12 +2,13 @@
 import numpy as np
 from DBConnector import DBConnector
 
+# Local
 all_user_feature = []
 for tg in range(1, 7):
     user_feature = []
     fileName = 'user_feature_tg%d.txt' % tg
     for line in open(fileName):
-        uf = map(float, line.strip().split('\t')[1:20])
+        uf = map(float, line.strip().split('\t')[1:22])
         user_feature.append(uf)
     all_user_feature.append(np.mat(user_feature))
     

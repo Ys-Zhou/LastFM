@@ -66,13 +66,13 @@ class SvdProc(mp.Process):
         
         # SVD parameter
         gama = 0.02
-        lamda = 0.3
-        slowRate = 0.99
+        lamda = 0.1
+        slowRate = 0.01
         step = 0
         preRmse = 1000000000.0
         nowRmse = 0.0
 
-        while step < 10:
+        while step < 100:
             rmse = 0.0
             n = 0
             for u in self.train.keys():  
@@ -94,7 +94,7 @@ class SvdProc(mp.Process):
             if (nowRmse < preRmse):  
                 preRmse = nowRmse  
                   
-            gama *= slowRate  
+            gama *= (1 - slowRate)  
             step += 1
 
             while True:
