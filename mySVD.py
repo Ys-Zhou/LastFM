@@ -6,55 +6,63 @@ import time
 from DBConnector import DBConnector
 
 class SvdProc(mp.Process):
-    def __init__ (self, inTg, inRaw, inLock, inSvdNowStep, inAvgNowStep, inSvdItemFeature, inAvgItemFeature):
+    def __init__ (self, inTg, inLock, inSvdNowStep, inAvgNowStep, inSvdItemFeature, inAvgItemFeature, inDescentRate):
         mp.Process.__init__(self)
+        self.tg = inTg
         self.train = {}
+        self.userList = []
+        self.itemList = []
         self.user_feature = {}
         self.item_feature = {}
-        self.tg = inTg
-        self.raw = inRaw
         # Load server values
         self.lock = inLock
         self.svdNowStep = inSvdNowStep
         self.avgNowStep = inAvgNowStep
         self.svdItemFeature = inSvdItemFeature
         self.avgItemFeature = inAvgItemFeature
+        self.descentRate = inDescentRate
         # Local attributes
         self.feature = 20
-        self.userNum = 10005
-        self.movieNum = 87458
+        self.processNum = 3
         
     def load_data(self):
-        for item in self.raw:
+        inDBConnector = DBConnector()
+        
+        query = 'SELECT DISTINCT userid FROM traindata'
+        rList = inDBConnector.runQuery(query)
+        rList = map(list, zip(*rList))[0]
+        self.userList = map(str, rList)
+
+        query = 'SELECT DISTINCT gameid FROM traindata'
+        rList = inDBConnector.runQuery(query)
+        rList = map(list, zip(*rList))[0]
+        self.itemList = map(str, rList)
+        
+        query = 'SELECT userid, gameid, r%d FROM traindata WHERE r%d != 0' % (self.tg, self.tg)
+        for item in inDBConnector.runQuery(query):
             self.train.setdefault(str(item[0]), {})
             self.train[str(item[0])][str(item[1])] = float(item[2])
 
     def initialFeature(self):  
         random.seed(0)    
-        for i in range(1, self.userNum + 1):  
-            si = str(i)  
-            self.user_feature.setdefault(si, {})   
+        for i in self.userList:  
+            self.user_feature.setdefault(i, {})   
             for j in range(1, self.feature + 1):  
-                sj = str(j)  
-                self.user_feature[si].setdefault(sj, random.uniform(0, 1))   
+                self.user_feature[i].setdefault(j, random.uniform(0.1, 1))   
  
-        for i in range(1, self.movieNum + 1):  
-            si = str(i)  
-            self.item_feature.setdefault(si, {})  
+        for i in self.itemList:
+            self.item_feature.setdefault(i, {})  
             for j in range(1, self.feature + 1):  
-                sj = str(j)  
-                self.item_feature[si].setdefault(sj, random.uniform(0, 1))  
+                self.item_feature[i].setdefault(j, random.uniform(0.1, 1))
 
     def savetxt(self):
-        fileName = 'user_feature_tg%d.txt' % self.tg
+        fileName = 'user_feature_tg%d_n.txt' % self.tg
         f = open(fileName, 'w+')
-        for i in range(1, self.userNum + 1):
-            si = str(i)
-            f.write('%s' % si)
+        for i in self.userList:
+            f.write('%s' % i)
             for j in range(1, self.feature + 1):
-                sj = str(j)
-                f.write('\t%f' % self.user_feature[si][sj])
-            f.write('\n')    
+                f.write('\t%f' % self.user_feature[i][j])
+            f.write('\n')
         f.close()
         
     def run(self):  
@@ -64,44 +72,56 @@ class SvdProc(mp.Process):
         self.initialFeature()
         print 'Process-%d: initial user and item feature, respectly success' % self.tg
         
-        # SVD parameter
+        # SVD parameters
         gama = 0.02
         lamda = 0.1
         slowRate = 0.01
+        stopAt = 0.001
+        
+        # Save rmse
+        fileName = 'rmse_tg%d_n.txt' % self.tg
+        f = open(fileName, 'w+')
+        
         step = 0
         preRmse = 1000000000.0
         nowRmse = 0.0
 
-        while step < 100:
+        while step < 200:  # max step
             rmse = 0.0
             n = 0
-            for u in self.train.keys():  
-                for i in self.train[u].keys():  
-                    pui = 0  
+            for u in self.train.keys():
+                for i in self.train[u].keys():
+                    pui = 0
                     for k in range(1, self.feature + 1):
-                        sk = str(k)  
-                        pui += self.user_feature[u][sk] * self.item_feature[i][sk]  
-                    eui = self.train[u][i] - pui  
-                    rmse += pow(eui, 2)  
-                    n += 1  
-                    for k in range(1, self.feature + 1):  
-                        sk = str(k)  
-                        self.user_feature[u][sk] += gama * (eui * self.item_feature[i][sk] - lamda * self.user_feature[u][sk])  
-                        self.item_feature[i][sk] += gama * (eui * self.user_feature[u][sk] - lamda * self.item_feature[i][sk])  
+                        pui += self.user_feature[u][k] * self.item_feature[i][k]
+                    eui = self.train[u][i] - pui
+                    rmse += pow(eui, 2)
+                    n += 1
+                    for k in range(1, self.feature + 1):
+                        self.user_feature[u][k] += gama * (eui * self.item_feature[i][k] - lamda * self.user_feature[u][k])
+                        self.item_feature[i][k] += gama * (eui * self.user_feature[u][k] - lamda * self.item_feature[i][k])
                   
-            nowRmse = math.sqrt(rmse * 1.0 / n)  
-            print 'Process-%d: step: %d      Rmse: %s' % (self.tg, (step + 1), nowRmse)  
-            if (nowRmse < preRmse):  
-                preRmse = nowRmse  
-                  
+            nowRmse = math.sqrt(rmse * 1.0 / n)
+            dRate = 1 - nowRmse / preRmse
+            f.write('%f\n' % nowRmse)
+            print 'Process-%d: step: %d      Rmse: %f      %f' % (self.tg, (step + 1), nowRmse, dRate)  
+            
+            preRmse = nowRmse
             gama *= (1 - slowRate)  
             step += 1
 
             while True:
                 if self.lock.acquire():
                     if self.svdNowStep[self.tg - 1] < step:
+                        self.descentRate[self.tg - 1] = dRate
                         self.svdItemFeature[self.tg - 1] = self.item_feature
                         self.svdNowStep[self.tg - 1] = step
+                    if map(lambda x:x < stopAt, self.descentRate) == [True] * self.processNum:
+                        self.lock.release()
+                        f.close()
+                        self.savetxt()
+                        print 'Process-%d: svd + stochastic gradient descent success' % self.tg
+                        return
                     if self.avgNowStep.value == step:
                         self.item_feature.update(self.avgItemFeature)
                         self.lock.release()
@@ -109,11 +129,8 @@ class SvdProc(mp.Process):
                     self.lock.release()
                     time.sleep(1)
 
-        self.savetxt()
-        print 'Process-%d: svd + stochastic gradient descent success' % self.tg
-
 class AvgProc(mp.Process):
-    def __init__ (self, inLock, inSvdNowStep, inAvgNowStep, inSvdItemFeature, inAvgItemFeature):
+    def __init__ (self, inLock, inSvdNowStep, inAvgNowStep, inSvdItemFeature, inAvgItemFeature, inDescentRate):
         mp.Process.__init__(self)
         # Load server values
         self.lock = inLock
@@ -121,12 +138,19 @@ class AvgProc(mp.Process):
         self.avgNowStep = inAvgNowStep
         self.svdItemFeature = inSvdItemFeature
         self.avgItemFeature = inAvgItemFeature
+        self.descentRate = inDescentRate
         # Local attributes
         self.feature = 20
-        self.movieNum = 87458
-        self.processNum = 6
+        self.processNum = 3
+        self.stopAt = 0.001
     
     def run(self):
+        inDBConnector = DBConnector()
+        query = 'SELECT DISTINCT gameid FROM traindata'
+        rList = inDBConnector.runQuery(query)
+        rList = map(list, zip(*rList))[0]
+        itemList = map(str, rList)
+        
         while True:
             if self.lock.acquire():
                 if list(self.svdNowStep) == [self.avgNowStep.value + 1] * self.processNum:
@@ -134,26 +158,26 @@ class AvgProc(mp.Process):
                     for t in range(self.processNum):
                         lSvdItemFeature[t] = self.svdItemFeature[t]
                     lAvgItemFeature = {}
-                    for i in range(1, self.movieNum + 1):
-                        si = str(i)
-                        lAvgItemFeature.setdefault(si, {})
+                    for i in itemList:
+                        lAvgItemFeature.setdefault(i, {})
                         for j in range(1, self.feature + 1):
-                            sj = str(j)
                             value = 0.0
                             for t in range(self.processNum):
-                                value += lSvdItemFeature[t][si][sj]
-                            lAvgItemFeature[si].setdefault(sj, value / float(self.processNum)) 
+                                value += lSvdItemFeature[t][i][j]
+                            lAvgItemFeature[i].setdefault(j, value / float(self.processNum)) 
                     self.avgItemFeature.update(lAvgItemFeature)
                     self.avgNowStep.value += 1
                     print 'Process-avg: next step'
+                if map(lambda x:x < self.stopAt, self.descentRate) == [True] * self.processNum:
+                    self.lock.release()
+                    return
                 self.lock.release()
-            time.sleep(10)
+            time.sleep(1)
 
 if __name__ == '__main__':
     # Main process values
     feature = 20
-    movieNum = 87458
-    processNum = 6
+    processNum = 3
     
     # Process locker
     lock = mp.Lock()
@@ -164,50 +188,26 @@ if __name__ == '__main__':
     avgNowStep = manager.Value('i', 0)
     svdItemFeature = manager.list([0] * processNum)
     avgItemFeature = manager.dict()
+    descentRate = manager.list([1.0] * processNum)
     
-    # Do queries at main process due to avoid database block
-    inDBConnector = DBConnector()
-    
-    query = 'SELECT uid, aid, pro*LOG(total+1) FROM norm_as WHERE tg = 1'
-    r_list = inDBConnector.runQuery(query)
-    svd1 = SvdProc(1, r_list, lock, svdNowStep, avgNowStep, svdItemFeature, avgItemFeature)
+    # Start all processes
+    svd1 = SvdProc(1, lock, svdNowStep, avgNowStep, svdItemFeature, avgItemFeature, descentRate)
     svd1.daemon = True
     svd1.start()
     
-    query = 'SELECT uid, aid, pro*LOG(total+1) FROM norm_as WHERE tg = 2'
-    r_list = inDBConnector.runQuery(query)
-    svd2 = SvdProc(2, r_list, lock, svdNowStep, avgNowStep, svdItemFeature, avgItemFeature)
+    svd2 = SvdProc(2, lock, svdNowStep, avgNowStep, svdItemFeature, avgItemFeature, descentRate)
     svd2.daemon = True
     svd2.start()
     
-    query = 'SELECT uid, aid, pro*LOG(total+1) FROM norm_as WHERE tg = 3'
-    r_list = inDBConnector.runQuery(query)
-    svd3 = SvdProc(3, r_list, lock, svdNowStep, avgNowStep, svdItemFeature, avgItemFeature)
+    svd3 = SvdProc(3, lock, svdNowStep, avgNowStep, svdItemFeature, avgItemFeature, descentRate)
     svd3.daemon = True
     svd3.start()
-     
-    query = 'SELECT uid, aid, pro*LOG(total+1) FROM norm_as WHERE tg = 4'
-    r_list = inDBConnector.runQuery(query)
-    svd4 = SvdProc(4, r_list, lock, svdNowStep, avgNowStep, svdItemFeature, avgItemFeature)
-    svd4.daemon = True
-    svd4.start()
-     
-    query = 'SELECT uid, aid, pro*LOG(total+1) FROM norm_as WHERE tg = 5'
-    r_list = inDBConnector.runQuery(query)
-    svd5 = SvdProc(5, r_list, lock, svdNowStep, avgNowStep, svdItemFeature, avgItemFeature)
-    svd5.daemon = True
-    svd5.start()
-     
-    query = 'SELECT uid, aid, pro*LOG(total+1) FROM norm_as WHERE tg = 6'
-    r_list = inDBConnector.runQuery(query)
-    svd6 = SvdProc(6, r_list, lock, svdNowStep, avgNowStep, svdItemFeature, avgItemFeature)
-    svd6.daemon = True
-    svd6.start()
     
-    avg = AvgProc(lock, svdNowStep, avgNowStep, svdItemFeature, avgItemFeature)
+    avg = AvgProc(lock, svdNowStep, avgNowStep, svdItemFeature, avgItemFeature, descentRate)
     avg.daemon = True
     avg.start()
     
-    # Keep the main process running
-    while True:
-        time.sleep(60)
+    svd1.join()
+    svd2.join()
+    svd3.join()
+    avg.join()
