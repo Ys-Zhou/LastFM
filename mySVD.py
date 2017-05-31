@@ -28,17 +28,17 @@ class SvdProc(mp.Process):
     def load_data(self):
         inDBConnector = DBConnector()
         
-        query = 'SELECT DISTINCT userid FROM traindata'
+        query = 'SELECT DISTINCT userid FROM traindata_yes'
         rList = inDBConnector.runQuery(query)
         rList = map(list, zip(*rList))[0]
         self.userList = map(str, rList)
 
-        query = 'SELECT DISTINCT gameid FROM traindata'
+        query = 'SELECT DISTINCT gameid FROM traindata_yes'
         rList = inDBConnector.runQuery(query)
         rList = map(list, zip(*rList))[0]
         self.itemList = map(str, rList)
         
-        query = 'SELECT userid, gameid, r%d FROM traindata WHERE r%d != 0' % (self.tg, self.tg)
+        query = 'SELECT userid, gameid, rating FROM traindata_yes WHERE tg = %d AND rating != 0' % self.tg
         for item in inDBConnector.runQuery(query):
             self.train.setdefault(str(item[0]), {})
             self.train[str(item[0])][str(item[1])] = float(item[2])
@@ -56,7 +56,7 @@ class SvdProc(mp.Process):
                 self.item_feature[i].setdefault(j, random.uniform(0.1, 1))
 
     def savetxt(self):
-        fileName = 'user_feature_tg%d_n.txt' % self.tg
+        fileName = 'user_feature_tg%d_y.txt' % self.tg
         f = open(fileName, 'w+')
         for i in self.userList:
             f.write('%s' % i)
@@ -146,7 +146,7 @@ class AvgProc(mp.Process):
     
     def run(self):
         inDBConnector = DBConnector()
-        query = 'SELECT DISTINCT gameid FROM traindata'
+        query = 'SELECT DISTINCT gameid FROM traindata_yes'
         rList = inDBConnector.runQuery(query)
         rList = map(list, zip(*rList))[0]
         itemList = map(str, rList)

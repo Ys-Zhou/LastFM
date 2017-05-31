@@ -101,10 +101,15 @@ def measure(feature, testNum, train, user_feature, item_feature):
     rList = inDBConnector.runQuery(query)
     test_user = map(list, zip(*rList))[0]
     
+#     query = 'SELECT gameid FROM pop'
+#     rList = inDBConnector.runQuery(query)
+#     pop_item = map(list, zip(*rList))[0]
+    
     for u in test_user:
         res = []
         for i in item_feature.keys():
-            if not train[u].has_key(i):  # exclude the known items
+            if not train[u].has_key(i):  # exclude the known items 
+#                 if i not in pop_item:  # and popular items
                 pre = 0.0
                 for k in range(1, feature + 1):
                     pre += user_feature[u][k] * item_feature[i][k]
@@ -117,7 +122,7 @@ def measure(feature, testNum, train, user_feature, item_feature):
 
         for i in range(50):  # Top-N
             if cd.has_key(topn[i][0]):
-                whn += cd[topn[i][0]] / (math.log(i + 1) + 1)
+                whn += cd[topn[i][0]]
         print u, whn
 
 if __name__ == "__main__":

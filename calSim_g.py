@@ -20,6 +20,7 @@ user_feature = np.mat(user_featureL)
 
 insert = ('INSERT INTO sim_g ' 'VALUES (%s, %s, %s)')
 
+print len(user_list)
 for aim in range(len(user_list)):
     if user_list[aim] in test_user:
         for cop in range(len(user_list)):

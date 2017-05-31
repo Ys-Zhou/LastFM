@@ -20,7 +20,7 @@ for tg in range(1, 4):
         user_feature.append(map(float, line_trump[1:22]))
     all_user_feature.append(np.mat(user_feature))
     
-insert = ('INSERT INTO sim_no ' 'VALUES (%s, %s, %s, %s)')
+insert = ('INSERT INTO sim_yes ' 'VALUES (%s, %s, %s, %s)')
 
 for aim in range(len(user_list)):
     if user_list[aim] in test_user:

@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
+import math
 from DBConnector import DBConnector
 
 inDBConnector = DBConnector()
 
-switch = False
-k = 6  # 目标列数
+switch = True
+k = 3  # 目标列数
 
 def listadd(listA, listB, num):
     res = [0] * num
@@ -19,12 +20,12 @@ def listpro(listA, pro, num):
     return res
 
 def avg(uname):
-    query = ("SELECT w1, w2, w3, w4, w5, w6, w7, w8, w9, w10, w11, w12, w13, w14, w15, w16, w17, w18, w19, w20, w21, w22, w23, w24 "
-             "FROM rawdata_nonoise WHERE uname = \"%s\"") % uname
+    query = ("SELECT c1, c2, c3 "
+             "FROM temp WHERE userid = \"%s\"") % uname
     result_list = inDBConnector.runQuery(query)
     table = map(list, zip(*result_list))
 
-    query = "SELECT aname FROM rawdata_nonoise WHERE uname = \"%s\"" % uname
+    query = "SELECT gameid FROM temp WHERE userid = \"%s\"" % uname
     result_list = inDBConnector.runQuery(query)    
     lent = len(result_list)
 
@@ -45,12 +46,23 @@ def avg(uname):
         remind = listadd(remind, new, lent)
 
     for index in range(lent):
-        insert = ('INSERT INTO pretreat_as (uname, aname, tg1, tg2, tg3, tg4, tg5, tg6)' 'VALUES (%s, %s, %s, %s, %s, %s, %s, %s)')
-        data = (uname, result_list[index][0], aim[0][index], aim[1][index], aim[2][index], aim[3][index], aim[4][index], aim[5][index])
+#         r1 = (aim[0][index] + 0.5 * aim[1][index] + 0.25 * aim[2][index]) / 1.75
+#         r2 = (0.5 * aim[0][index] + aim[1][index] + 0.5 * aim[2][index]) / 2
+#         r3 = (0.25 * aim[0][index] + 0.5 * aim[1][index] + aim[2][index]) / 1.75
+        r1 = aim[0][index]
+        r2 = aim[1][index]
+        r3 = aim[2][index]
+
+        insert = ('INSERT INTO traindata_yes (userid, gameid, tg, rating)' 'VALUES (%s, %s, %s, %s)')
+        data = (uname, result_list[index][0], 1, math.log(r1 + 1))
+        inDBConnector.runInsert(insert, data)
+        data = (uname, result_list[index][0], 2, math.log(r2 + 1))
+        inDBConnector.runInsert(insert, data)
+        data = (uname, result_list[index][0], 3, math.log(r3 + 1))
         inDBConnector.runInsert(insert, data)
 
 if switch:
-    query = 'SELECT uname FROM user'
+    query = 'SELECT DISTINCT userid FROM temp'
     result_list = inDBConnector.runQuery(query)
     count = 1
     for item in result_list:
