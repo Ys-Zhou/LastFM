@@ -21,11 +21,11 @@ def listpro(listA, pro, num):
 
 def avg(uname):
     query = ("SELECT c1, c2, c3 "
-             "FROM temp WHERE userid = \"%s\"") % uname
+             "FROM traindata_full WHERE userid = \"%s\"") % uname
     result_list = inDBConnector.runQuery(query)
     table = map(list, zip(*result_list))
 
-    query = "SELECT gameid FROM temp WHERE userid = \"%s\"" % uname
+    query = "SELECT gameid FROM traindata_full WHERE userid = \"%s\"" % uname
     result_list = inDBConnector.runQuery(query)    
     lent = len(result_list)
 
@@ -46,14 +46,14 @@ def avg(uname):
         remind = listadd(remind, new, lent)
 
     for index in range(lent):
-#         r1 = (aim[0][index] + 0.5 * aim[1][index] + 0.25 * aim[2][index]) / 1.75
-#         r2 = (0.5 * aim[0][index] + aim[1][index] + 0.5 * aim[2][index]) / 2
-#         r3 = (0.25 * aim[0][index] + 0.5 * aim[1][index] + aim[2][index]) / 1.75
-        r1 = aim[0][index]
-        r2 = aim[1][index]
-        r3 = aim[2][index]
+        r1 = (aim[0][index] + 0.5 * aim[1][index] + 0.25 * aim[2][index]) / 1.75
+        r2 = (0.5 * aim[0][index] + aim[1][index] + 0.5 * aim[2][index]) / 2
+        r3 = (0.25 * aim[0][index] + 0.5 * aim[1][index] + aim[2][index]) / 1.75
+#         r1 = aim[0][index]
+#         r2 = aim[1][index]
+#         r3 = aim[2][index]
 
-        insert = ('INSERT INTO traindata_yes (userid, gameid, tg, rating)' 'VALUES (%s, %s, %s, %s)')
+        insert = ('INSERT INTO traindata_yep (userid, gameid, tg, rating)' 'VALUES (%s, %s, %s, %s)')
         data = (uname, result_list[index][0], 1, math.log(r1 + 1))
         inDBConnector.runInsert(insert, data)
         data = (uname, result_list[index][0], 2, math.log(r2 + 1))
@@ -62,7 +62,7 @@ def avg(uname):
         inDBConnector.runInsert(insert, data)
 
 if switch:
-    query = 'SELECT DISTINCT userid FROM temp'
+    query = 'SELECT DISTINCT userid FROM traindata_full'
     result_list = inDBConnector.runQuery(query)
     count = 1
     for item in result_list:
