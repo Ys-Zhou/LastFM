@@ -1,7 +1,3 @@
-.settings
-__pycache__
-*.pydevproject
-*.project
+.idea
 *.pyc
 *.txt
-*.db
